@@ -1,4 +1,4 @@
-Submodule temporal contains modified content
+Submodule temporal 81d3454..308afb3:
 diff --git a/temporal/common/persistence/sql/sqlplugin/db_handle.go b/temporal/common/persistence/sql/sqlplugin/db_handle.go
 index a4f4071c7..6aa23b2de 100644
 --- a/temporal/common/persistence/sql/sqlplugin/db_handle.go
