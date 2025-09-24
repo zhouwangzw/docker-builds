@@ -1,4 +1,4 @@
-Submodule temporal contains modified content
+Submodule temporal 33c613b..41cab55:
 diff --git a/temporal/tools/common/schema/types.go b/temporal/tools/common/schema/types.go
 index 9d97db792..a6e717220 100644
 --- a/temporal/tools/common/schema/types.go
