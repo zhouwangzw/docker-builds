@@ -1,4 +1,4 @@
-Submodule temporal 8f6caaf..3ca8d0b:
+Submodule temporal contains modified content
 diff --git a/temporal/common/config/config.go b/temporal/common/config/config.go
 index 9f3d8b590..3e7173eca 100644
 --- a/temporal/common/config/config.go
@@ -99,7 +99,7 @@ index 8ea7f0087..b62866e96 100644
  			return postgresqlSession.DB, nil
  		} else {
 diff --git a/temporal/common/persistence/sql/sqlplugin/postgresql/session/session.go b/temporal/common/persistence/sql/sqlplugin/postgresql/session/session.go
-index 4e704332d..cc1155d2f 100644
+index 4e704332d..772d1e7db 100644
 --- a/temporal/common/persistence/sql/sqlplugin/postgresql/session/session.go
 +++ b/temporal/common/persistence/sql/sqlplugin/postgresql/session/session.go
 @@ -25,13 +25,19 @@
@@ -150,7 +150,7 @@ index 4e704332d..cc1155d2f 100644
  	if err != nil {
  		return nil, err
  	}
-@@ -100,18 +114,41 @@ func createConnection(
+@@ -100,18 +114,40 @@ func createConnection(
  func buildDSN(
  	cfg *config.SQL,
  	r resolver.ServiceResolver,
@@ -175,7 +175,6 @@ index 4e704332d..cc1155d2f 100644
 +		)
 +		if err != nil {
 +			logger.Error(fmt.Sprintf("failed to get access token for %v: %v", cfg.ConnectAddr, err), tag.Error(err))
-+			return "", err
 +		}
 +		passwd = token
 +	}
@@ -195,7 +194,7 @@ index 4e704332d..cc1155d2f 100644
  }
  
  func buildDSNAttr(cfg *config.SQL) url.Values {
-@@ -148,3 +185,25 @@ func buildDSNAttr(cfg *config.SQL) url.Values {
+@@ -148,3 +184,25 @@ func buildDSNAttr(cfg *config.SQL) url.Values {
  	}
  	return parameters
  }
