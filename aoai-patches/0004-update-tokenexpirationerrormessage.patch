@@ -1,0 +1,14 @@
+Submodule temporal contains modified content
+diff --git a/temporal/common/persistence/sql/sqlplugin/db_handle.go b/temporal/common/persistence/sql/sqlplugin/db_handle.go
+index 6aa23b2de..185e5ebcb 100644
+--- a/temporal/common/persistence/sql/sqlplugin/db_handle.go
++++ b/temporal/common/persistence/sql/sqlplugin/db_handle.go
+@@ -46,7 +46,7 @@ import (
+ const (
+ 	// TODO: this should be dynamic config.
+ 	sessionRefreshMinInternal = 1 * time.Second
+-	accessTokenExpireErrorMsg = "The access token has expired. Please acquire a new token and retry."
++	accessTokenExpireErrorMsg = "The access token has expired"
+ )
+ 
+ var (

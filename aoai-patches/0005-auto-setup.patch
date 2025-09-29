@@ -1,0 +1,102 @@
+diff --git a/docker/auto-setup.sh b/docker/auto-setup.sh
+index 461e40f..8173c5c 100755
+--- a/docker/auto-setup.sh
++++ b/docker/auto-setup.sh
+@@ -206,6 +206,7 @@ setup_postgres_schema() {
+     SCHEMA_DIR=${TEMPORAL_HOME}/schema/postgresql/${POSTGRES_VERSION_DIR}/temporal/versioned
+     # Create database only if its name is different from the user name. Otherwise PostgreSQL container itself will create database.
+     if [[ ${DBNAME} != "${POSTGRES_USER}" && ${SKIP_DB_CREATE} != true ]]; then
++        echo "Creating database ${DBNAME}."
+         temporal-sql-tool \
+             --plugin ${DB} \
+             --ep "${POSTGRES_SEEDS}" \
+@@ -220,6 +221,7 @@ setup_postgres_schema() {
+             --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+             create
+     fi
++    echo "Setting up schema for ${DBNAME}."
+     temporal-sql-tool \
+         --plugin ${DB} \
+         --ep "${POSTGRES_SEEDS}" \
+@@ -233,6 +235,7 @@ setup_postgres_schema() {
+         --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+         --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+         setup-schema -v 0.0
++    echo "Updating schema for ${DBNAME}."
+     temporal-sql-tool \
+         --plugin ${DB} \
+         --ep "${POSTGRES_SEEDS}" \
+@@ -251,6 +254,7 @@ setup_postgres_schema() {
+     if [[ ${ENABLE_ES} == false ]]; then
+       VISIBILITY_SCHEMA_DIR=${TEMPORAL_HOME}/schema/postgresql/${POSTGRES_VERSION_DIR}/visibility/versioned
+       if [[ ${VISIBILITY_DBNAME} != "${POSTGRES_USER}" && ${SKIP_DB_CREATE} != true ]]; then
++          echo "Creating visibility database ${VISIBILITY_DBNAME}."
+           temporal-sql-tool \
+               --plugin ${DB} \
+               --ep "${POSTGRES_SEEDS}" \
+@@ -265,6 +269,7 @@ setup_postgres_schema() {
+               --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+               create
+       fi
++      echo "Setting up schema for ${VISIBILITY_DBNAME}."
+       temporal-sql-tool \
+           --plugin ${DB} \
+           --ep "${POSTGRES_SEEDS}" \
+@@ -278,6 +283,7 @@ setup_postgres_schema() {
+           --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+           --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+           setup-schema -v 0.0
++      echo "Updating schema for ${VISIBILITY_DBNAME}."
+       temporal-sql-tool \
+           --plugin ${DB} \
+           --ep "${POSTGRES_SEEDS}" \
+@@ -420,7 +426,18 @@ setup_server(){
+ if [[ ${SKIP_SCHEMA_SETUP} != true ]]; then
+     validate_db_env
+     wait_for_db
+-    setup_schema
++
++    while true; do
++        echo "Running setup_schema"
++        setup_schema
++        if [ $? -eq 0 ]; then
++            echo "setup_schema completed successfully."
++            break
++        else
++            echo "setup_schema failed. Retrying in 10 seconds..."
++            sleep 10
++        fi
++    done
+ fi
+ 
+ if [[ ${ENABLE_ES} == true ]]; then
+@@ -429,5 +446,27 @@ if [[ ${ENABLE_ES} == true ]]; then
+     setup_es_index
+ fi
+ 
+-# Run this func in parallel process. It will wait for server to start and then run required steps.
+-setup_server &
++if [[ ${WAIT_FOR_SETUP_SERVER} == true ]]; then
++    # If running as k8s job, wait for setup_server to complete.
++    echo "Waiting for setup_server to complete"
++    while true; do
++        echo "Running setup_server"
++        setup_server
++        if [ $? -eq 0 ]; then
++            echo "setup_server completed successfully."
++            break
++        else
++            echo "setup_server failed. Retrying in 10 seconds..."
++            sleep 10
++        fi
++    done
++
++    echo "Terminating istio proxy"
++    curl -s -XPOST http://localhost:15020/quitquitquit
++    sleep 10
++else
++    # Run this func in parallel process. It will wait for server to start and then run required steps.
++    echo "Running setup_server in parallel."
++    setup_server &
++fi
++echo "Exiting auto-setup"
