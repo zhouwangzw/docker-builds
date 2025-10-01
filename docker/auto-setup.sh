@@ -65,6 +65,11 @@ set -eu -o pipefail
 
 : "${SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES:=false}"
 
+: "${SKIP_VIDEOGEN_NAMESPACE_CREATION:=false}"
+: "${VIDEOGEN_NAMESPACE:=videogen}"
+: "${VIDEOGEN_NAMESPACE_RETENTION:=72h}"
+: "${SKIP_ADD_VIDEOGEN_SEARCH_ATTRIBUTES:=false}"
+
 # === Helper functions ===
 
 die() {
@@ -439,6 +444,37 @@ add_custom_search_attributes() {
 # @@@SNIPEND
 }
 
+register_videogen_namespace() {
+    echo "Registering namespace: ${VIDEOGEN_NAMESPACE}."
+    if ! temporal operator namespace describe "${VIDEOGEN_NAMESPACE}"; then
+        echo "Namespace ${VIDEOGEN_NAMESPACE} not found. Creating..."
+        until temporal operator namespace create --retention "${VIDEOGEN_NAMESPACE_RETENTION}" --description "Videogen namespace." "${VIDEOGEN_NAMESPACE}"; do
+            echo "Failed to register namespace ${VIDEOGEN_NAMESPACE}. Retrying..."
+            sleep 10
+        done
+        echo "Namespace ${VIDEOGEN_NAMESPACE} registration complete."
+    else
+        echo "Namespace ${VIDEOGEN_NAMESPACE} already registered."
+    fi
+}
+
+add_videogen_search_attributes() {
+    until temporal operator search-attribute list --namespace "${VIDEOGEN_NAMESPACE}"; do
+      echo "Waiting for namespace cache ${VIDEOGEN_NAMESPACE} to refresh..."
+      sleep 1
+    done
+    echo "Namespace cache ${VIDEOGEN_NAMESPACE} refreshed."
+
+    echo "Adding videogen search attributes in namespace ${VIDEOGEN_NAMESPACE}."
+    until temporal operator search-attribute create --namespace "${VIDEOGEN_NAMESPACE}" \
+        --name TaskId --type Keyword \
+        ; do
+            echo "Failed to add videogen search attributes. Retrying..."
+            sleep 10
+    done
+    echo "videogen search attributes added."
+}
+
 setup_server(){
     echo "Temporal CLI address: ${TEMPORAL_ADDRESS}."
 
@@ -454,6 +490,14 @@ setup_server(){
 
     if [[ ${SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES} != true ]]; then
         add_custom_search_attributes
+    fi
+
+    if [[ ${SKIP_VIDEOGEN_NAMESPACE_CREATION} != true ]]; then
+        register_videogen_namespace
+    fi
+
+    if [[ ${SKIP_ADD_VIDEOGEN_SEARCH_ATTRIBUTES} != true ]]; then
+        add_videogen_search_attributes
     fi
 }
 
