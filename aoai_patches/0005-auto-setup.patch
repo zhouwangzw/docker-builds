@@ -1,0 +1,244 @@
+diff --git a/docker/auto-setup.sh b/docker/auto-setup.sh
+index 461e40f..01323fe 100755
+--- a/docker/auto-setup.sh
++++ b/docker/auto-setup.sh
+@@ -65,6 +65,11 @@ set -eu -o pipefail
+ 
+ : "${SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES:=false}"
+ 
++: "${SKIP_VIDEOGEN_NAMESPACE_CREATION:=false}"
++: "${VIDEOGEN_NAMESPACE:=videogen}"
++: "${VIDEOGEN_NAMESPACE_RETENTION:=72h}"
++: "${SKIP_ADD_VIDEOGEN_SEARCH_ATTRIBUTES:=false}"
++
+ # === Helper functions ===
+ 
+ die() {
+@@ -206,7 +211,8 @@ setup_postgres_schema() {
+     SCHEMA_DIR=${TEMPORAL_HOME}/schema/postgresql/${POSTGRES_VERSION_DIR}/temporal/versioned
+     # Create database only if its name is different from the user name. Otherwise PostgreSQL container itself will create database.
+     if [[ ${DBNAME} != "${POSTGRES_USER}" && ${SKIP_DB_CREATE} != true ]]; then
+-        temporal-sql-tool \
++        echo "Creating database ${DBNAME}."
++        until temporal-sql-tool \
+             --plugin ${DB} \
+             --ep "${POSTGRES_SEEDS}" \
+             -u "${POSTGRES_USER}" \
+@@ -218,9 +224,15 @@ setup_postgres_schema() {
+             --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+             --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+             --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-            create
++            create \
++            ; do
++                echo "Failed to create database ${DBNAME}. Retrying..."
++                sleep 10
++        done
+     fi
+-    temporal-sql-tool \
++
++    echo "Setting up schema for ${DBNAME}."
++    until temporal-sql-tool \
+         --plugin ${DB} \
+         --ep "${POSTGRES_SEEDS}" \
+         -u "${POSTGRES_USER}" \
+@@ -232,8 +244,14 @@ setup_postgres_schema() {
+         --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+         --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+         --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-        setup-schema -v 0.0
+-    temporal-sql-tool \
++        setup-schema -v 0.0 \
++        ; do
++            echo "Failed to set up schema ${DBNAME}. Retrying..."
++            sleep 10
++    done
++
++    echo "Updating schema for ${DBNAME}."
++    until temporal-sql-tool \
+         --plugin ${DB} \
+         --ep "${POSTGRES_SEEDS}" \
+         -u "${POSTGRES_USER}" \
+@@ -245,13 +263,18 @@ setup_postgres_schema() {
+         --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+         --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+         --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-        update-schema -d "${SCHEMA_DIR}"
++        update-schema -d "${SCHEMA_DIR}" \
++        ; do
++            echo "Failed to update schema ${DBNAME}. Retrying..."
++            sleep 10
++    done
+ 
+     # Only setup visibility schema if ES is not enabled
+     if [[ ${ENABLE_ES} == false ]]; then
+       VISIBILITY_SCHEMA_DIR=${TEMPORAL_HOME}/schema/postgresql/${POSTGRES_VERSION_DIR}/visibility/versioned
+       if [[ ${VISIBILITY_DBNAME} != "${POSTGRES_USER}" && ${SKIP_DB_CREATE} != true ]]; then
+-          temporal-sql-tool \
++          echo "Creating visibility database ${VISIBILITY_DBNAME}."
++          until temporal-sql-tool \
+               --plugin ${DB} \
+               --ep "${POSTGRES_SEEDS}" \
+               -u "${POSTGRES_USER}" \
+@@ -263,9 +286,15 @@ setup_postgres_schema() {
+               --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+               --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+               --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-              create
++              create \
++              ; do
++                  echo "Failed to create visibility database ${VISIBILITY_DBNAME}. Retrying..."
++                  sleep 10
++          done
+       fi
+-      temporal-sql-tool \
++
++      echo "Setting up schema for visibility database ${VISIBILITY_DBNAME}."
++      until temporal-sql-tool \
+           --plugin ${DB} \
+           --ep "${POSTGRES_SEEDS}" \
+           -u "${POSTGRES_USER}" \
+@@ -277,8 +306,14 @@ setup_postgres_schema() {
+           --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+           --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+           --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-          setup-schema -v 0.0
+-      temporal-sql-tool \
++          setup-schema -v 0.0 \
++          ; do
++              echo "Failed to set up schema for visibility database ${VISIBILITY_DBNAME}. Retrying..."
++              sleep 10
++      done
++
++      echo "Updating schema for visibility database ${VISIBILITY_DBNAME}."
++      until temporal-sql-tool \
+           --plugin ${DB} \
+           --ep "${POSTGRES_SEEDS}" \
+           -u "${POSTGRES_USER}" \
+@@ -290,7 +325,11 @@ setup_postgres_schema() {
+           --tls-key-file "${POSTGRES_TLS_KEY_FILE}" \
+           --tls-ca-file "${POSTGRES_TLS_CA_FILE}" \
+           --tls-server-name "${POSTGRES_TLS_SERVER_NAME}" \
+-          update-schema -d "${VISIBILITY_SCHEMA_DIR}"
++          update-schema -d "${VISIBILITY_SCHEMA_DIR}" \
++          ; do
++              echo "Failed to update schema for visibility database ${VISIBILITY_DBNAME}. Retrying..."
++              sleep 10
++      done
+     fi
+ }
+ 
+@@ -369,8 +408,11 @@ register_default_namespace() {
+     echo "Registering default namespace: ${DEFAULT_NAMESPACE}."
+     if ! temporal operator namespace describe "${DEFAULT_NAMESPACE}"; then
+         echo "Default namespace ${DEFAULT_NAMESPACE} not found. Creating..."
+-        temporal operator namespace create --retention "${DEFAULT_NAMESPACE_RETENTION}" --description "Default namespace for Temporal Server." "${DEFAULT_NAMESPACE}"
+-        echo "Default namespace ${DEFAULT_NAMESPACE} registration complete."
++        until temporal operator namespace create --retention "${DEFAULT_NAMESPACE_RETENTION}" --description "Default namespace for Temporal Server." "${DEFAULT_NAMESPACE}"; do
++            echo "Failed to register default namespace ${DEFAULT_NAMESPACE}. Retrying..."
++            sleep 10
++        done
++        echo "Default namespace ${DEFAULT_NAMESPACE} registered."
+     else
+         echo "Default namespace ${DEFAULT_NAMESPACE} already registered."
+     fi
+@@ -386,17 +428,53 @@ add_custom_search_attributes() {
+     echo "Adding Custom*Field search attributes."
+     # TODO: Remove CustomStringField
+ # @@@SNIPSTART add-custom-search-attributes-for-testing-command
+-    temporal operator search-attribute create --namespace "${DEFAULT_NAMESPACE}" \
++    until temporal operator search-attribute create --namespace "${DEFAULT_NAMESPACE}" \
+         --name CustomKeywordField --type Keyword \
+         --name CustomStringField --type Text \
+         --name CustomTextField --type Text \
+         --name CustomIntField --type Int \
+         --name CustomDatetimeField --type Datetime \
+         --name CustomDoubleField --type Double \
+-        --name CustomBoolField --type Bool
++        --name CustomBoolField --type Bool \
++        ; do
++            echo "Failed to add custom search attributes. Retrying..."
++            sleep 10
++    done
++    echo "Custom search attributes added."
+ # @@@SNIPEND
+ }
+ 
++register_videogen_namespace() {
++    echo "Registering namespace: ${VIDEOGEN_NAMESPACE}."
++    if ! temporal operator namespace describe "${VIDEOGEN_NAMESPACE}"; then
++        echo "Namespace ${VIDEOGEN_NAMESPACE} not found. Creating..."
++        until temporal operator namespace create --retention "${VIDEOGEN_NAMESPACE_RETENTION}" --description "Videogen namespace." "${VIDEOGEN_NAMESPACE}"; do
++            echo "Failed to register namespace ${VIDEOGEN_NAMESPACE}. Retrying..."
++            sleep 10
++        done
++        echo "Namespace ${VIDEOGEN_NAMESPACE} registration complete."
++    else
++        echo "Namespace ${VIDEOGEN_NAMESPACE} already registered."
++    fi
++}
++
++add_videogen_search_attributes() {
++    until temporal operator search-attribute list --namespace "${VIDEOGEN_NAMESPACE}"; do
++      echo "Waiting for namespace cache ${VIDEOGEN_NAMESPACE} to refresh..."
++      sleep 1
++    done
++    echo "Namespace cache ${VIDEOGEN_NAMESPACE} refreshed."
++
++    echo "Adding videogen search attributes in namespace ${VIDEOGEN_NAMESPACE}."
++    until temporal operator search-attribute create --namespace "${VIDEOGEN_NAMESPACE}" \
++        --name TaskId --type Keyword \
++        ; do
++            echo "Failed to add videogen search attributes. Retrying..."
++            sleep 10
++    done
++    echo "videogen search attributes added."
++}
++
+ setup_server(){
+     echo "Temporal CLI address: ${TEMPORAL_ADDRESS}."
+ 
+@@ -413,6 +491,14 @@ setup_server(){
+     if [[ ${SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES} != true ]]; then
+         add_custom_search_attributes
+     fi
++
++    if [[ ${SKIP_VIDEOGEN_NAMESPACE_CREATION} != true ]]; then
++        register_videogen_namespace
++    fi
++
++    if [[ ${SKIP_ADD_VIDEOGEN_SEARCH_ATTRIBUTES} != true ]]; then
++        add_videogen_search_attributes
++    fi
+ }
+ 
+ # === Main ===
+@@ -421,6 +507,7 @@ if [[ ${SKIP_SCHEMA_SETUP} != true ]]; then
+     validate_db_env
+     wait_for_db
+     setup_schema
++    echo "setup_schema completed."
+ fi
+ 
+ if [[ ${ENABLE_ES} == true ]]; then
+@@ -429,5 +516,18 @@ if [[ ${ENABLE_ES} == true ]]; then
+     setup_es_index
+ fi
+ 
+-# Run this func in parallel process. It will wait for server to start and then run required steps.
+-setup_server &
++if [[ ${WAIT_FOR_SETUP_SERVER} == true ]]; then
++    # If running as k8s job, wait for setup_server to complete.
++    echo "Waiting for setup_server to complete"
++    setup_server
++    echo "setup_server completed."
++
++    echo "Terminating istio proxy"
++    curl -s -XPOST http://localhost:15020/quitquitquit
++    sleep 10
++else
++    # Run this func in parallel process. It will wait for server to start and then run required steps.
++    echo "Running setup_server in parallel."
++    setup_server &
++fi
++echo "Exiting auto-setup"
